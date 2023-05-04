@@ -1,0 +1,49 @@
+<resources>
+    <string name="app_name">Smart Pot</string>
+    <string name="action_settings">Settings</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">First Fragment</string>
+    <string name="second_fragment_label">Second Fragment</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+
+    <string name="smart_pot">Smart Pot</string>
+
+    <string name="hello_first_fragment">Hello first fragment</string>
+    <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
+    <string name="cooker">Cooker:</string>
+    <string name="temperature">Temperature:</string>
+    <string name="power">Power:</string>
+    <string name="stirring">Stirring:</string>
+    <string name="motor_state_off">OFF</string>
+    <string name="motor_state_idle">IDLE</string>
+    <string name="motor_state_stirring">STIRRING</string>
+    <string name="cooker_state_idle">IDLE</string>
+    <string name="cooker_state_cooking">COOKING</string>
+    <string name="progress">Progress:</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="power_during_heatup">Power during heating</string>
+    <string name="boiling_duration">Boiling duration</string>
+    <string name="boiling_temperature">Boiling temperature</string>
+    <string name="recipe_hint">Name</string>
+    <string name="timer_starts">Timer starts</string>
+    <string name="stirrer">Stirrer settings</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="duration">Duration:</string>
+    <string name="timer_starts_when_boiling_duration_is_reached">Timer starts when boiling is reached</string>
+    <string name="timer_starts_immediately">Timer starts immediately</string>
+    <string name="manual">Manual controls</string>
+    <string name="recipes">Recipes</string>
+    <string name="off">OFF</string>
+    <string name="on">ON</string>
+    <string name="stop">Stop</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="paused">Paused</string>
+    <string-array name="time_starts_array">
+        <item>When boiling temperature is reached</item>
+        <item>Immediately</item>
+    </string-array>
+</resources>
