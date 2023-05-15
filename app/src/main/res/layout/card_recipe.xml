@@ -57,17 +57,30 @@
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <TextView
+            android:id="@+id/pregressTextView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0%"
+            android:textSize="10sp"
+            android:visibility="gone"
+            android:textColor="@color/md_theme_light_primary"
+            app:layout_constraintBottom_toBottomOf="@+id/recipeProgress"
+            app:layout_constraintEnd_toEndOf="@+id/recipeProgress"
+            app:layout_constraintStart_toStartOf="@+id/recipeProgress"
+            app:layout_constraintTop_toTopOf="@+id/recipeProgress" />
+
         <ProgressBar
             android:id="@+id/recipeProgress"
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:indeterminate="false"
             android:layout_marginEnd="12dp"
+            android:indeterminate="false"
             android:max="100"
-            android:visibility="gone"
             android:progress="0"
             android:progressDrawable="@drawable/custom_progress_bar"
+            android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@+id/recipePowerOnButton"
             app:layout_constraintEnd_toEndOf="@+id/recipePowerOnButton"
             app:layout_constraintTop_toTopOf="@+id/recipePowerOnButton" />

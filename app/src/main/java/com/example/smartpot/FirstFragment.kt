@@ -80,10 +80,10 @@ class FirstFragment : Fragment() {
             }
         }
 
-        LocalBroadcastManager.getInstance(requireContext()).registerReceiver(pong, IntentFilter("pong"))
+        LocalBroadcastManager.getInstance(requireContext().applicationContext).registerReceiver(pong, IntentFilter("pong"))
         viewLifecycleOwner.lifecycleScope.launch {
             while (!isBluetoothServiceRunning) {
-                LocalBroadcastManager.getInstance(requireContext()).sendBroadcastSync(Intent("ping"))
+                LocalBroadcastManager.getInstance(requireContext().applicationContext).sendBroadcastSync(Intent("ping"))
                 delay(500)
             }
             requireActivity().findNavController(R.id.nav_host_fragment_content_main)
@@ -92,7 +92,7 @@ class FirstFragment : Fragment() {
     }
 
     private fun startBluetoothService() {
-        (activity as MainActivity).startMyService()
+        (activity as MainActivity).startBluetoothService()
     }
 
     override fun onDestroyView() {

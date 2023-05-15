@@ -1,10 +1,7 @@
 package com.example.smartpot
 
 import android.annotation.SuppressLint
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -18,38 +15,25 @@ import android.util.Log
 import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import org.jetbrains.annotations.Nullable
+import com.example.smartpot.Constants.HC06_MAC_ADDRESS
+import com.example.smartpot.Constants.HC06_UUID
+import com.example.smartpot.Constants.NOTIFICATION_CHANNEL_ID
+import com.example.smartpot.Constants.NOTIFICATION_ID
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import java.util.*
 
 
 class MyForegroundService : Service(), ActivityResultRegistryOwner {
     private lateinit var bluetoothManager: BluetoothManager
     private lateinit var bluetoothAdapter: BluetoothAdapter
     private var socket: BluetoothSocket? = null
-    private lateinit var outputStream: OutputStream
     private lateinit var inputStream: InputStream
     private lateinit var workerThread: Thread
     private lateinit var readBuffer: ByteArray
     private var readBufferPosition: Int = 0
-    var isSocketConnected = false
     private var outputSocketConnected = false
-    private var drawableId = 0
-    var recyclerViewPos = 0
-    var desiredTemperature = 0
-    private var cookingRecipeName = ""
-    var timerStartsImmediately = false
-    var automaticCooking = false
-    var isPaused = false
-    var manualCooking = false
-    var temperatureReached = false
 
     @Volatile
     private var stopReader: Boolean = false
@@ -61,38 +45,41 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
     var STOP_RECIPE = "17"
     var TRUE = "TRUE"
 
-    var isRunning = false
-
     companion object {
-        private const val NOTIFICATION_ID = 2
-        private const val NOTIFICATION_CHANNEL_ID = "BluetoothServiceChannel"
-        private val HC06_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
-        private const val HC06_MAC_ADDRESS: String = "00:22:06:30:7C:6C"
-    }
+        private var drawableId = 0
+        private var cookingRecipeName = ""
+        private lateinit var outputStream: OutputStream
+        var isSocketConnected = false
+        var isServiceRunning = false
+        var timerStartsImmediately = false
+        var automaticCooking = false
+        var isPaused = false
+        var manualCooking = false
+        var temperatureReached = false
+        var recyclerViewPos = 0
+        var desiredTemperature = 0
 
-    var mBinder: IBinder = LocalBinder()
+        fun setAutomaticRecipeVars(drawable: Int, pos: Int, name: String, startsImmediately: Boolean) {
+            drawableId = drawable
+            recyclerViewPos = pos
+            cookingRecipeName = name
+            automaticCooking = true
+            timerStartsImmediately = startsImmediately
+        }
 
-    fun startService(context: Context) {
-        val startIntent = Intent(context, MyForegroundService::class.java)
-        ContextCompat.startForegroundService(context, startIntent)
-    }
-
-    fun stopService(context: Context) {
-        disconnectBluetooth()
-        val stopIntent = Intent(context, MyForegroundService::class.java)
-        context.stopService(stopIntent)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        fun sendData(message: String) {
+            try {
+                val msg = (message + "\u0000").toByteArray(Charsets.UTF_8)
+                Log.d("MyLog", "writing $msg")
+                this.outputStream.write(msg)
+            } catch (e: IOException) {
+                Log.e("MyLog", "Error sending data: ${e.message}")
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        return mBinder
-    }
-
-
-    inner class LocalBinder : Binder() {
-        fun getServerInstance(): MyForegroundService? {
-            return this@MyForegroundService
-        }
+        return null
     }
 
     override fun getActivityResultRegistry(): ActivityResultRegistry {
@@ -101,27 +88,34 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
 
     override fun onCreate() {
         super.onCreate()
-        // Initialize any resources or setup code here
-        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        bluetoothAdapter = bluetoothManager.adapter
         createNotificationChannel()
-        LocalBroadcastManager
-            .getInstance(this)
-            .registerReceiver(ServiceEchoReceiver(), IntentFilter("ping"))
     }
 
     private inner class ServiceEchoReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (isSocketConnected) {
-                LocalBroadcastManager
-                    .getInstance(this@MyForegroundService)
-                    .sendBroadcastSync(Intent("pong"))
+            Log.d("MyLog","Receive boroadcast ${intent.action}")
+            when (intent.action) {
+                "ping" -> {
+                    if (socket != null && socket!!.isConnected) {
+                        LocalBroadcastManager
+                            .getInstance(this@MyForegroundService)
+                            .sendBroadcastSync(Intent("pong"))
+                    }
+                }
+                "DefaultNotification" -> {
+                    updateToDefaultNotification()
+                }
+                "ManualCookingNotification" -> {
+                    updateNotificationToManualCooking()
+                }
             }
+
         }
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Log.d("MyLog", "Create notification channel")
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 "Bluetooth Service Channel",
@@ -134,27 +128,56 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
 
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        showNotification()
+        bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        bluetoothAdapter = bluetoothManager.adapter
         enableBluetooth()
-
-        // Create a notification for the foreground service
-        val notification: Notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("")
-            .setContentText("")
-            .setSmallIcon(R.drawable.smartpot)
-            .build()
-
-        startForegroundService(intent)
-        // Put the service into foreground mode
-        startForeground(NOTIFICATION_ID, notification)
-
-        updateToDefaultNotification()
-
-        // Return START_STICKY to ensure the service is restarted if it is killed by the system
+        isServiceRunning = true
+        val intentFilter = IntentFilter().apply {
+            addAction("ping")
+            addAction("DefaultNotification")
+            addAction("ManualCookingNotification")
+        }
+        LocalBroadcastManager
+            .getInstance(this)
+            .registerReceiver(ServiceEchoReceiver(), intentFilter)
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val restartServiceIntent = Intent(applicationContext, this.javaClass)
+        restartServiceIntent.setPackage(packageName)
+        val restartServicePendingIntent = PendingIntent.getService(
+            applicationContext,
+            1,
+            restartServiceIntent,
+            PendingIntent.FLAG_ONE_SHOT
+        )
+        val alarmService = applicationContext.getSystemService(ALARM_SERVICE) as AlarmManager
+        alarmService[AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000] =
+            restartServicePendingIntent
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun showNotification()
+    {
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
+
+        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setContentTitle("Smart pot connected")
+            .setContentText("Disconnect it from the app once you are finished cooking")
+            .setSmallIcon(R.drawable.smartpot)
+            .setContentIntent(pendingIntent)
+
+        startForeground(NOTIFICATION_ID, notification.build())
     }
 
     fun updateToDefaultNotification()
     {
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
+
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -162,14 +185,16 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
             .setContentTitle("Smart pot connected")
             .setContentText("Disconnect it from the app once you are finished cooking")
             .setSmallIcon(R.drawable.smartpot)
-            .build()
+            .setContentIntent(pendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+        notificationManager.notify(NOTIFICATION_ID, updatedNotification.build())
+        startForeground(NOTIFICATION_ID, updatedNotification.build())
     }
 
     fun updateNotificationToBoiling(temperature: String)
     {
-        Log.d("MyLog", "Boiling notification")
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -177,28 +202,33 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
             .setContentTitle("Smart pot is making - $cookingRecipeName")
             .setContentText("Heating up $temperature°C/$desiredTemperature°C.")
             .setSmallIcon(R.drawable.smartpot)
-            .build()
+            .setContentIntent(pendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+        notificationManager.notify(NOTIFICATION_ID, updatedNotification.build())
+        startForeground(NOTIFICATION_ID, updatedNotification.build())
     }
 
     fun updateProgressNotification(progress: String) {
-        Log.d("MyLog", "Progress notification")
         val progressInt = progress.toIntOrNull() ?: return
 
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
 
         val updatedNotification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Smart pot is making - $cookingRecipeName")
             .setContentText("$progressInt% done")
             .setSmallIcon(R.drawable.smartpot)
-            .build()
+            .setContentIntent(pendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+        notificationManager.notify(NOTIFICATION_ID, updatedNotification.build())
+        startForeground(NOTIFICATION_ID, updatedNotification.build())
     }
 
     fun updateNotificationToManualCooking() {
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -206,13 +236,16 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
             .setContentTitle("Smart pot is in manual mode")
             .setContentText("")
             .setSmallIcon(R.drawable.smartpot)
-            .build()
+            .setContentIntent(pendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+        notificationManager.notify(NOTIFICATION_ID, updatedNotification.build())
+        startForeground(NOTIFICATION_ID, updatedNotification.build())
     }
 
     fun updateNotificationToPause()
     {
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0)
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -220,9 +253,10 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
             .setContentTitle("Smart pot is paused")
             .setContentText("")
             .setSmallIcon(R.drawable.smartpot)
-            .build()
+            .setContentIntent(pendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+        notificationManager.notify(NOTIFICATION_ID, updatedNotification.build())
+        startForeground(NOTIFICATION_ID, updatedNotification.build())
     }
 
 
@@ -248,7 +282,8 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
     }
 
     private fun enableBluetooth() {
-        if (socket == null || socket != null && !socket!!.isConnected) {
+        Log.d("MyLog","is socket connected $isSocketConnected")
+        if (socket == null || socket != null && !socket!!.isConnected || !isSocketConnected) {
             connectSocket()
         }
     }
@@ -263,7 +298,7 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
                     return
                 }
                 this.socket?.connect()
-                this.outputStream = this.socket!!.outputStream
+                outputStream = this.socket!!.outputStream
                 outputSocketConnected = true
                 inputStream = socket!!.inputStream
                 isSocketConnected = true
@@ -358,23 +393,9 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
         workerThread.start()
     }
 
-    fun sendData(message: String) {
-        try {
-            val msg = (message + "\u0000").toByteArray(Charsets.UTF_8)
-            Log.d("MyLog", "writing $msg")
-            this.outputStream.write(msg)
-        } catch (e: IOException) {
-            Log.e("MyLog", "Error sending data: ${e.message}")
-        }
-    }
 
-    fun setAutomaticRecipeVars(drawable: Int, pos: Int, name: String, startsImmediately: Boolean) {
-        drawableId = drawable
-        recyclerViewPos = pos
-        cookingRecipeName = name
-        automaticCooking = true
-        timerStartsImmediately = startsImmediately
-    }
+
+
 
     private fun disconnectBluetooth() {
         Log.d("MyLog", "Disconnect bluetooth called")
@@ -394,8 +415,21 @@ class MyForegroundService : Service(), ActivityResultRegistryOwner {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("MyLog", "on Destroy called in service")
-        isRunning = false
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        disconnectBluetooth()
+        drawableId = 0
+        cookingRecipeName = ""
+        isSocketConnected = false
+        isServiceRunning = false
+        timerStartsImmediately = false
+        automaticCooking = false
+        isPaused = false
+        manualCooking = false
+        temperatureReached = false
+        recyclerViewPos = 0
+        desiredTemperature = 0
+        socket = null
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(ServiceEchoReceiver())
     }
 }

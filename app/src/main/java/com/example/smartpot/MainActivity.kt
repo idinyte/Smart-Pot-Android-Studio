@@ -13,6 +13,7 @@ import android.view.MenuItem
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.ContextCompat
 import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
@@ -24,28 +25,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var mConnection: ServiceConnection
 
-    private var mBounded = false
-    var bluetoothService: MyForegroundService? = null
-
-    override fun onPostCreate(savedInstanceState: Bundle?) {
-        super.onPostCreate(savedInstanceState)
-
-        mConnection = object : ServiceConnection {
-            override fun onServiceDisconnected(name: ComponentName) {
-                mBounded = false
-                bluetoothService = null
-            }
-
-            override fun onServiceConnected(name: ComponentName, service: IBinder) {
-                val mLocalBinder = service as MyForegroundService.LocalBinder
-                bluetoothService = mLocalBinder.getServerInstance()
-            }
-        }
-
-        val startIntent = Intent(this, MyForegroundService::class.java)
-        bindService(startIntent, mConnection as ServiceConnection, Context.BIND_AUTO_CREATE)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
@@ -56,15 +35,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
         menuInflater.inflate(R.menu.menu_main, menu)
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
         return when (item.itemId) {
             R.id.action_settings -> true
             else -> super.onOptionsItemSelected(item)
@@ -77,21 +52,23 @@ class MainActivity : AppCompatActivity() {
                 || super.onSupportNavigateUp()
     }
 
-    fun startMyService() {
-        bluetoothService!!.startService(this)
-    }
-
-    fun stopMyService() {
-        if (mBounded) {
-            unbindService(mConnection)
-            mBounded = false
+    fun startBluetoothService() {
+        if(!MyForegroundService.isServiceRunning)
+        {
+            val startIntent = Intent(applicationContext, MyForegroundService::class.java)
+            ContextCompat.startForegroundService(applicationContext, startIntent)
         }
-        bluetoothService!!.stopService(this)
+    }
+    fun stopBluetoothService() {
+        if(MyForegroundService.isServiceRunning)
+        {
+            stopService(Intent(applicationContext, MyForegroundService::class.java))
+        }
     }
 
     fun sendData(message: String)
     {
         Log.d("MyLog", "Sending $message")
-        bluetoothService!!.sendData(message)
+        MyForegroundService.sendData(message)
     }
 }

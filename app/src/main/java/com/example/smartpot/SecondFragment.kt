@@ -2,6 +2,8 @@ package com.example.smartpot
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -11,6 +13,7 @@ import android.view.ViewTreeObserver
 import android.widget.*
 import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -38,6 +41,7 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
     private lateinit var currentRecipeName: String
     private lateinit var pauseButton: Button
     private lateinit var expandableLayout: RelativeLayout
+    private lateinit var recipeProgressTextView: TextView
     var TRUE = "TRUE"
     var FALSE = "FALSE"
     val ERROR = "01"
@@ -103,22 +107,22 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
             ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 // The RecyclerView has been laid out and populated with children.
-                if((activity as MainActivity).bluetoothService!!.automaticCooking)
+                if(MyForegroundService.automaticCooking)
                 {
                     binding.statusState.text = getString(R.string.on)
-                    setLayoutToAutomaticRecipe((activity as MainActivity).bluetoothService!!.recyclerViewPos)
-                    Log.d("MyLog", "Does timer starts immediately = ${(activity as MainActivity).bluetoothService!!.temperatureReached}")
-                    if((activity as MainActivity).bluetoothService!!.temperatureReached || (activity as MainActivity).bluetoothService!!.timerStartsImmediately)
+                    setLayoutToAutomaticRecipe(MyForegroundService.recyclerViewPos)
+                    Log.d("MyLog", "Does timer starts immediately = ${MyForegroundService.temperatureReached}")
+                    if(MyForegroundService.temperatureReached || MyForegroundService.timerStartsImmediately)
                     {
                         temperatureReached()
                     }
-                    if((activity as MainActivity).bluetoothService!!.isPaused)
+                    if(MyForegroundService.isPaused)
                     {
                         pauseButton = expandableLayout.findViewById<Button>(R.id.recipeRightButton)
                         pauseRecipe(TRUE)
                     }
                 }
-                else if((activity as MainActivity).bluetoothService!!.manualCooking)
+                else if(MyForegroundService.manualCooking)
                 {
                     binding.statusState.text = resources.getText(R.string.on)
                     binding.buttonManualControls.text = resources.getText(R.string.recipes)
@@ -254,10 +258,12 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
             {
                 return
             }
-            (activity as MainActivity).bluetoothService!!.setAutomaticRecipeVars(recipe.imageResource, position, recipe.name!!, recipe.timerStartsImmediately)
-            (activity as MainActivity).bluetoothService!!.desiredTemperature = recipe.temperature
+            MyForegroundService.setAutomaticRecipeVars(recipe.imageResource, position, recipe.name!!, recipe.timerStartsImmediately)
+            MyForegroundService.desiredTemperature = recipe.temperature
             withContext(Dispatchers.Main) {
                 setLayoutToAutomaticRecipe(position)
+                if(recipe.timerStartsImmediately)
+                    temperatureReached()
             }
         }
     }
@@ -306,10 +312,16 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
         rightButton.text = getString(R.string.pause)
         rightButton.setOnClickListener { pauseResumeButton(it as Button) }
 
+        recipeProgressTextView = copiedCardView.findViewById(R.id.pregressTextView)
+        recipeProgressTextView.visibility = View.GONE
+        recipeProgressTextView.text = "0%"
+
         recipeProgress = copiedCardView.findViewById(R.id.recipeProgress)
         recipeProgress.visibility = View.GONE
         recipeProgress.isIndeterminate = false
         recipeProgress.progress = 0
+
+
 
         thermometerImageView = copiedCardView.findViewById(R.id.thermometerImageView)
         thermometerImageView.visibility = View.VISIBLE
@@ -542,7 +554,7 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
     private fun completeDisconnect()
     {
         finishCooking()
-        (activity as MainActivity).stopMyService()
+        (activity as MainActivity).stopBluetoothService()
         findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
     }
 
@@ -604,13 +616,15 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
         if (parameters == TRUE)
         {
             binding.statusState.text = getString(R.string.on)
-            (activity as MainActivity).bluetoothService!!.manualCooking = true
-            (activity as MainActivity).bluetoothService!!.updateNotificationToManualCooking()
+            MyForegroundService.manualCooking = true
+            Log.d("MyLog", "Sending notification")
+            LocalBroadcastManager.getInstance(requireContext().applicationContext).sendBroadcastSync(Intent("ManualCookingNotification"))
         }
         else if (parameters == FALSE)
         {
-            (activity as MainActivity).bluetoothService!!.manualCooking = false
-            (activity as MainActivity).bluetoothService!!.updateToDefaultNotification()
+            MyForegroundService.manualCooking = false
+            Log.d("MyLog", "Sending notification")
+            LocalBroadcastManager.getInstance(requireContext().applicationContext).sendBroadcastSync(Intent("DefaultNotification"))
             binding.statusState.text = getString(R.string.off)
             binding.temperatureState.text = "-"
             binding.motorState.text = "-"
@@ -655,12 +669,14 @@ class SecondFragment : Fragment(), OnRecipeClickListener, BluetoothListener {
         if(progressInt != null)
         {
             recipeProgress.progress = progressInt
+            recipeProgressTextView.text = "$progress%"
         }
     }
 
     private fun temperatureReached() {
         thermometerImageView.visibility = View.GONE
         recipeProgress.visibility = View.VISIBLE
+        recipeProgressTextView.visibility = View.VISIBLE
     }
 
     private fun setPowerState(power: String)
